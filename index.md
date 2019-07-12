@@ -44,29 +44,23 @@
     SvRingNode
     SvEllipseNode
     SvSuperEllipsoidNode
-    SvRegularSolid
 
 ## Analyzers
     SvBBoxNode
     SvVolumeNode
     SvAreaNode
     DistancePPNode
-    SvDistancePointLineNode
-    SvDistancePointPlaneNode
-    SvDistancetLineLineNode
     SvPathLengthNode
     CentersPolsNodeMK2
     CentersPolsNodeMK3
     GetNormalsNode
     VectorNormalNode
-    SvIntersectLineSphereNode
-    SvIntersectPlanePlaneNode
     SvKDTreeNodeMK2
     SvKDTreeEdgesNodeMK2
-    SvKDTreePathNode
     SvBvhOverlapNodeNew
     SvMeshFilterNode
     SvEdgeAnglesNode
+    SvEvaluateImageNode
     SvMeshSelectNode
     SvSelectSimilarNode
     SvPointInside
@@ -74,7 +68,6 @@
     SvRaycasterLiteNode
     SvOBJInsolationNode
     SvDeformationNode
-    SvLinkedVertsNode
 
 ## Transforms
     SvRotationNodeMK2
@@ -83,7 +76,6 @@
     SvMirrorNode
     MatrixApplyNode
     SvSimpleDeformNode
-    SvBarycentricTransformNode
     ---
     Svb28MatrixArrayNode
 
@@ -263,6 +255,7 @@
     SvDataShapeNode
     SvStethoscopeNodeMK2
     SvDebugPrintNode
+    SvExportGcodeNode
 
 ## BPY Data
     SvGetPropNode
