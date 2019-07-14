@@ -70,34 +70,84 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
     last_e : FloatProperty(name="Pull", default=5.0, min=0, soft_max=10)
     path_length : FloatProperty(name="Pull", default=5.0, min=0, soft_max=10)
 
-    folder : StringProperty(name="File", default="", subtype='FILE_PATH')
-    pull : FloatProperty(name="Pull", default=5.0, min=0, soft_max=10, update = updateNode)
-    push : FloatProperty(name="Push", default=5.0, min=0, soft_max=10, update = updateNode)
-    dz : FloatProperty(name="dz", default=2.0, min=0, soft_max=20, update = updateNode)
-    flow_mult : FloatProperty(name="Flow Mult", default=1.0, min=0, soft_max=3, update = updateNode)
-    feed : IntProperty(name="Feed Rate (F)", default=1000, min=0, soft_max=20000, update = updateNode)
-    feed_horizontal : IntProperty(name="Feed Horizontal", default=2000, min=0, soft_max=20000, update = updateNode)
-    feed_vertical : IntProperty(name="Feed Vertical", default=500, min=0, soft_max=20000, update = updateNode)
-    feed : IntProperty(name="Feed Rate (F)", default=1000, min=0, soft_max=20000, update = updateNode)
-    esteps : FloatProperty(name="E Steps/Unit", default=5, min=0, soft_max=100, update = updateNode)
-    start_code : StringProperty(name="Start", default='')
-    end_code : StringProperty(name="End", default='')
-    auto_sort_layers : BoolProperty(name="Auto Sort Layers", default=True, update = updateNode)
-    auto_sort_points : BoolProperty(name="Auto Sort Points", default=False, update = updateNode)
-    close_all : BoolProperty(name="Close Shapes", default=False, update = updateNode)
-    nozzle : FloatProperty(name="Nozzle", default=0.4, min=0, soft_max=10, update = updateNode)
-    layer_height : FloatProperty(name="Layer Height", default=0.1, min=0, soft_max=10, update = updateNode)
-    filament : FloatProperty(name="Filament (\u03A6)", default=1.75, min=0, soft_max=120, update = updateNode)
+    folder : StringProperty(
+        name="File", default="", subtype='FILE_PATH',
+        description = 'Destination folder.\nIf missing, the file folder will be used'
+        )
+    pull : FloatProperty(
+        name="Pull", default=5.0, min=0, soft_max=10, update = updateNode,
+        description='Pull material before lift'
+        )
+    push : FloatProperty(
+        name="Push", default=5.0, min=0, soft_max=10, update = updateNode,
+        description='Push material before start extruding'
+        )
+    dz : FloatProperty(
+        name="dz", default=2.0, min=0, soft_max=20, update = updateNode,
+        description='Z movement for lifting the nozzle before travel'
+        )
+    flow_mult : FloatProperty(
+        name="Flow Mult", default=1.0, min=0, soft_max=3, update = updateNode,
+        description = 'Flow multiplier.\nUse a single value or a list of values for changing it during the printing path'
+        )
+    feed : IntProperty(
+        name="Feed Rate (F)", default=1000, min=0, soft_max=20000,
+        update = updateNode, description='Printing speed'
+        )
+    feed_horizontal : IntProperty(
+        name="Feed Horizontal", default=2000, min=0, soft_max=20000,
+        update = updateNode, description='Travel speed'
+        )
+    feed_vertical : IntProperty(
+        name="Feed Vertical", default=500, min=0, soft_max=20000,
+        update = updateNode, description='Lift movements speed'
+        )
+    esteps : FloatProperty(
+        name="E Steps/Unit", default=5, min=0, soft_max=100, update = updateNode)
+    start_code : StringProperty(
+        name="Start", default='', description = 'Text block for starting code'
+        )
+    end_code : StringProperty(
+        name="End", default='', description = 'Text block for ending code'
+        )
+    auto_sort_layers : BoolProperty(
+        name="Auto Sort Layers", default=True, update = updateNode,
+        description = 'Sort layers according to the Z of the median point'
+        )
+    auto_sort_points : BoolProperty(
+        name="Auto Sort Points", default=False, update = updateNode,
+        description = 'Shift layer points trying to automatically reduce needed travel movements'
+        )
+    close_all : BoolProperty(
+        name="Close Shapes", default=False, update = updateNode,
+        description = 'Repeat the starting point at the end of the vertices list for each layer'
+        )
+    nozzle : FloatProperty(
+        name="Nozzle", default=0.4, min=0, soft_max=10, update = updateNode,
+        description='Nozzle diameter'
+        )
+    layer_height : FloatProperty(
+        name="Layer Height", default=0.1, min=0, soft_max=10, update = updateNode,
+        description = 'Average layer height, needed for a correct extrusion'
+        )
+    filament : FloatProperty(
+        name="Filament (\u03A6)", default=1.75, min=0, soft_max=120,
+        update = updateNode, description='Filament (or material container) diameter'
+        )
 
     gcode_mode : EnumProperty(items=[
             ("CONT", "Continuous", ""),
             ("RETR", "Retraction", "")
-        ], default='CONT', name="Mode", update = updateNode)
+        ], default='CONT', name="Mode", update = updateNode,
+        description = 'If retraction is used, then each separated list of vertices\nwill be considered as a different layer'
+        )
 
     retraction_mode : EnumProperty(items=[
             ("FIRMWARE", "Firmware", ""),
             ("GCODE", "Gcode", "")
-        ], default='GCODE', name="Retraction mode", update = updateNode)
+        ], default='GCODE', name="Retraction Mode", update = updateNode,
+        description = 'If firmware retraction is used, then the retraction parameters will be controlled by the printer'
+        )
 
     def sv_init(self, context):
         self.inputs.new('StringsSocket', 'Layer Height',).prop_name = 'layer_height'
@@ -135,11 +185,12 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
         col.separator()
         if self.gcode_mode == 'RETR':
             col = layout.column(align=True)
-            col.label(text="Retraction mode:", icon='PREFERENCES')
+            col.label(text="Retraction Mode:", icon='NOCURVE')
             row = col.row()
             row.prop(self, 'retraction_mode', expand=True, toggle=True)
             if self.retraction_mode == 'GCODE':
-                col.label(text="Retraction:", icon='NOCURVE')
+                col.separator()
+                col.label(text="Retraction:", icon='PREFERENCES')
                 col.prop(self, 'pull', text='Retraction')
                 col.prop(self, 'dz', text='Z Hop')
                 col.prop(self, 'push', text='Preload')
@@ -373,6 +424,9 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
         if self.gcode_mode == 'RETR': self.outputs[3].sv_set([travel_edges])
 
     def export(self):
+        '''
+        Manually export generated Gcode
+        '''
         self.process(export=True)
 
 def register():
