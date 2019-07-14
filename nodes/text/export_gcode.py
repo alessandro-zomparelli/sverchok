@@ -26,7 +26,7 @@ import sverchok
 
 import bpy, os, mathutils
 from mathutils import Vector
-from numpy import mean
+import numpy as np
 import operator
 from math import pi
 
@@ -92,12 +92,12 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
     gcode_mode : EnumProperty(items=[
             ("CONT", "Continuous", ""),
             ("RETR", "Retraction", "")
-        ], default='CONT', name="Mode")
+        ], default='CONT', name="Mode", update = updateNode)
 
     retraction_mode : EnumProperty(items=[
             ("FIRMWARE", "Firmware", ""),
             ("GCODE", "Gcode", "")
-        ], default='GCODE', name="Retraction mode")
+        ], default='GCODE', name="Retraction mode", update = updateNode)
 
     def sv_init(self, context):
         self.inputs.new('StringsSocket', 'Layer Height',).prop_name = 'layer_height'
@@ -120,11 +120,6 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
         col = layout.column(align=True)
         row = col.row()
         row.prop(self, 'gcode_mode', expand=True, toggle=True)
-        if self.gcode_mode == 'RETR':
-            col = layout.column(align=True)
-            col.label(text="Retraction mode:", icon='PREFERENCES')
-            row = col.row()
-            row.prop(self, 'retraction_mode', expand=True, toggle=True)
         #col = layout.column(align=True)
         col = layout.column(align=True)
         col.label(text="Extrusion:", icon='MOD_FLUIDSIM')
@@ -134,11 +129,15 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
         col.separator()
         col.label(text="Speed (Feed Rate F):", icon='DRIVER')
         col.prop(self, 'feed', text='Print')
-        if self.gcode_mode == 'RETR' and self.retraction_mode == 'GCODE':
+        if self.gcode_mode == 'RETR':
             col.prop(self, 'feed_vertical', text='Z Lift')
             col.prop(self, 'feed_horizontal', text='Travel')
         col.separator()
         if self.gcode_mode == 'RETR':
+            col = layout.column(align=True)
+            col.label(text="Retraction mode:", icon='PREFERENCES')
+            row = col.row()
+            row.prop(self, 'retraction_mode', expand=True, toggle=True)
             if self.retraction_mode == 'GCODE':
                 col.label(text="Retraction:", icon='NOCURVE')
                 col.prop(self, 'pull', text='Retraction')
@@ -146,6 +145,7 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
                 col.prop(self, 'push', text='Preload')
                 col.separator()
             #col.label(text="Layers options:", icon='ALIGN_JUSTIFY')
+            col.separator()
             col.prop(self, 'auto_sort_layers', text="Sort Layers (Z)")
             col.prop(self, 'auto_sort_points', text="Sort Points (XY)")
             col.prop(self, 'close_all')
@@ -194,47 +194,59 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
             except:
                 pass
 
-        # sort vertices
-        if self.auto_sort_layers and self.gcode_mode == 'RETR':
-            sorted_verts = []
-            for curve in vertices:
-                # mean z
-                listz = [v[2] for v in curve]
-                meanz = mean(listz)
-                # store curve and meanz
-                sorted_verts.append((curve, meanz))
-            vertices = [data[0] for data in sorted(sorted_verts, key=lambda height: height[1])]
+        if self.gcode_mode == 'RETR':
 
-        if self.auto_sort_points and self.gcode_mode == 'RETR':
-            # curves median point
-            median_points = [mean(verts,axis=0) for verts in vertices]
+            # sort layers (Z)
+            if self.auto_sort_layers:
+                sorted_verts = []
+                for curve in vertices:
+                    # mean z
+                    listz = [v[2] for v in curve]
+                    meanz = np.mean(listz)
+                    # store curve and meanz
+                    sorted_verts.append((curve, meanz))
+                vertices = [data[0] for data in sorted(sorted_verts, key=lambda height: height[1])]
 
-            # chose starting point for each curve
-            for j, curve in enumerate(vertices):
-                kd = mathutils.kdtree.KDTree(len(vertices[j]))
-                for i, v in enumerate(vertices[j]):
-                    kd.insert(v, i)
-                kd.balance()
+            # sort vertices (XY)
+            if self.auto_sort_points:
+                # curves median point
+                median_points = [np.mean(verts,axis=0) for verts in vertices]
 
-                if j==0:
-                    # close to next two curves median point
-                    co_find = mean(median_points[j+1:j+3],axis=0)
-                elif j < len(vertices)-1:
-                    co_find = mean([median_points[j-1],median_points[j+1]],axis=0)
-                else:
-                    co_find = mean(median_points[j-2:j],axis=0)
+                # chose starting point for each curve
+                for j, curve in enumerate(vertices):
+                    kd = mathutils.kdtree.KDTree(len(vertices[j]))
+                    for i, v in enumerate(vertices[j]):
+                        kd.insert(v, i)
+                    kd.balance()
 
-                co, index, dist = kd.find(co_find)
-                vertices[j] = vertices[j][index:]+vertices[j][:index]
-                flow_mult[j] = flow_mult[j][index:]+flow_mult[j][:index]
-                layer[j] = layer[j][index:]+layer[j][:index]
+                    if j==0:
+                        # close to next two curves median point
+                        co_find = np.mean(median_points[j+1:j+3],axis=0)
+                    elif j < len(vertices)-1:
+                        co_find = np.mean([median_points[j-1],median_points[j+1]],axis=0)
+                    else:
+                        co_find = np.mean(median_points[j-2:j],axis=0)
 
-        #  close shapes
-        if self.close_all and self.gcode_mode == 'RETR':
-            for i in range(len(vertices)):
-                vertices[i].append(vertices[i][0])
-                flow_mult[i].append(flow_mult[i][0])
-                layer[i].append(layer[i][0])
+                    co, index, dist = kd.find(co_find)
+                    vertices[j] = vertices[j][index:]+vertices[j][:index]
+                    flow_mult[j] = flow_mult[j][index:]+flow_mult[j][:index]
+                    layer[j] = layer[j][index:]+layer[j][:index]
+
+            #  close shapes
+            if self.close_all:
+                for i in range(len(vertices)):
+                    vertices[i].append(vertices[i][0])
+                    flow_mult[i].append(flow_mult[i][0])
+                    layer[i].append(layer[i][0])
+
+        # calc bounding box
+        min_corner = np.min(vertices[0],axis=0)
+        max_corner = np.max(vertices[0],axis=0)
+        for i in range(1,len(vertices)):
+            eval_points = vertices[i] + [min_corner]
+            min_corner = np.min(eval_points,axis=0)
+            eval_points = vertices[i] + [max_corner]
+            max_corner = np.max(eval_points,axis=0)
 
         # initialize variables
         e = 0
@@ -258,7 +270,8 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
                 v_layer = layer[i][j]
 
                 # record max z
-                maxz = max(maxz,v[2])
+                maxz = np.max((maxz,v[2]))
+                #maxz = max(maxz,v[2])
 
                 # first point of the gcode
                 if i == j == 0:
@@ -272,14 +285,14 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
                     # start after retraction
                     if j == 0 and self.gcode_mode == 'RETR':
                         if(export):
+                            params = v[:2] + (maxz+self.dz,) + (feed_h,)
+                            to_write = 'G1 X{0:.4f} Y{1:.4f} Z{2:.4f} F{3:.0f}\n'.format(*params)
+                            file.write(to_write)
+                            params = v[:3] + (feed_v,)
+                            to_write = 'G1 X{0:.4f} Y{1:.4f} Z{2:.4f} F{3:.0f}\n'.format(*params)
+                            file.write(to_write)
                             if self.retraction_mode == 'GCODE':
-                                params = v[:2] + (maxz+self.dz,) + (feed_h,)
-                                to_write = 'G1 X{0:.4f} Y{1:.4f} Z{2:.4f} F{3:.0f}\n'.format(*params)
-                                file.write(to_write)
                                 e += self.push
-                                params = v[:3] + (feed_v,)
-                                to_write = 'G1 X{0:.4f} Y{1:.4f} Z{2:.4f} F{3:.0f}\n'.format(*params)
-                                file.write(to_write)
                                 file.write( 'G1 E' + format(e, '.4f') + '\n')
                             else:
                                 file.write('G11\n')
@@ -324,16 +337,15 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
                     path_length += dist
                     v0 = v1
                 if i < len(vertices)-1:
-                    if self.retraction_mode == 'GCODE':
-                        e -= self.pull
-                        if(export):
+                    if(export):
+                        if self.retraction_mode == 'GCODE':
+                            e -= self.pull
                             file.write('G0 E' + format(e, '.4f') + '\n')
-                            params = v0[:2] + (maxz+self.dz,) + (feed_v,)
-                            to_write = 'G1 X{0:.4f} Y{1:.4f} Z{2:.4f} F{3:.0f}\n'.format(*params)
-                            file.write(to_write)
-                    else:
-                        if(export):
+                        else:
                             file.write('G10\n')
+                        params = v0[:2] + (maxz+self.dz,) + (feed_v,)
+                        to_write = 'G1 X{0:.4f} Y{1:.4f} Z{2:.4f} F{3:.0f}\n'.format(*params)
+                        file.write(to_write)
                     printed_verts.append(v0.to_tuple())
                     printed_verts.append((v0.x, v0.y, maxz+self.dz))
                     travel_edges.append((len(printed_verts)-1, len(printed_verts)-2))
@@ -347,10 +359,14 @@ class SvExportGcodeNode(bpy.types.Node, SverchCustomTreeNode):
                 pass
             file.close()
             print("Saved gcode to " + path)
-        info = "Extruded Filament: " + format(e, '.2f') + '\n'
-        info += "Extruded Volume: " + format(e*pi*(self.filament/2)**2, '.2f') + '\n'
-        info += "Printed Path Length: " + format(path_length, '.2f') + '\n'
-        info += "Travel Length: " + format(travel_length, '.2f')
+        bb = list(min_corner) + list(max_corner)
+        info = 'Bounding Box:\n'
+        info += '\tmin\tX: {0:.1f}\tY: {1:.1f}\tZ: {2:.1f}\n'.format(*bb)
+        info += '\tmax\tX: {3:.1f}\tY: {4:.1f}\tZ: {5:.1f}\n'.format(*bb)
+        info += 'Extruded Filament: ' + format(e, '.2f') + '\n'
+        info += 'Extruded Volume: ' + format(e*pi*(self.filament/2)**2, '.2f') + '\n'
+        info += 'Printed Path Length: ' + format(path_length, '.2f') + '\n'
+        info += 'Travel Length: ' + format(travel_length, '.2f')
         self.outputs[0].sv_set(info)
         self.outputs[1].sv_set([printed_verts])
         self.outputs[2].sv_set([printed_edges])
